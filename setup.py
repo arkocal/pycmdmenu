@@ -7,7 +7,7 @@ print(setuptools.find_packages())
 
 setuptools.setup(
     name="cmdmenu",
-    version="0.1",
+    version="0.1.01",
     author="Ali Rasim Kocal",
     author_email="arkocal@gmail.com",
     description="A library for creating hierarchical command line arg menus.",

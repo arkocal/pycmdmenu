@@ -1,7 +1,9 @@
 """Automatically create command line menus with arg hiearchies."""
+import argparse
 import copy
 import inspect
 import pkgutil
+from types import ModuleType
 
 FUNC_NAME_ARG = "_cmdmenu_func_name"
 
@@ -114,7 +116,8 @@ def add_module(subparsers, module, recursive=True, toplevel=None):
     recursive (boolean): Whether to add submodules recursively.
     toplevel (boolean): If True, content of the module will be added
     directly to subparsers level, otherwise a new subparser will be created.
-    Defaults to False, unless CMDMENU_META dictionary overrides it.
+    Defaults to False, unless CMDMENU_META dictionary overrides it. Explicit
+    value will override both.
 
     If you define CMDMENU_META for the module or any of the submodules,
     elements of this dictionary will be passed as parameters to
@@ -147,9 +150,39 @@ def add_module(subparsers, module, recursive=True, toplevel=None):
             if vars(submodule).get("IS_MENU_MODULE", False):
                 add_module(add_to, submodule, recursive=ispkg)
 
+
 def parse_and_run_with(argument_parser):
     """Run function with arguments from populated argument_parser."""
     args = vars(argument_parser.parse_args())
     func = args.pop(FUNC_NAME_ARG, None)
     assert func is not None, "No function for given args"
     return func(**args)
+
+
+def run(toplevel=None, module=None, *args, **kwargs):
+    """Create a parser, parse args and run module.
+
+    params:
+    ----------
+    toplevel: module or list of modules, added as toplevels (see add_module)
+    module: module or list of modules, added with module-name arg (not toplevel)
+    *args, **kwargs: Passed directly to ArgumentParser constructor
+    """
+    argument_parser = argparse.ArgumentParser(*args, **kwargs)
+    subparsers = argument_parser.add_subparsers()
+
+    if toplevel is None:
+        toplevel = []
+    elif isinstance(toplevel, ModuleType):
+        toplevel = [toplevel]
+    for m in toplevel:
+        add_module(subparsers, m, recursive=True, toplevel=True)
+
+    if module is None:
+        module = []
+    elif isinstance(module, ModuleType):
+        module = [module]
+    for m in module:
+        add_module(subparsers, m, recursive=True, toplevel=False)
+
+    parse_and_run_with(argument_parser)
