@@ -9,7 +9,62 @@ Run `pip install cmdmenu`
 
 ## Usage
 
+First, create your modules:
+
+*echoes.py*
+```python
+from cmdmenu import cmdmenu_function
+
+@cmdmenu_function("Echo to terminal", "Longer description of echo")
+def echo(message: "Message to echo"):
+    print(message)
+
+@cmdmenu_function("Print a hello world message")
+def hello(name=None):
+    if name is None:
+        print("Hello, World!")
+    else:
+        print("Hello, {}!".format(name))
+```
+
+*arithmetics.py*
+```python
+from cmdmenu import cmdmenu_function
+
+@cmdmenu_function("Print sum of given numbers")
+def add_numbers(numbers: {"help": "Numbers to sum up",
+                  "nargs": "+", "type":int}):
+    print(sum(numbers))
+```
+
+Create your application in the same directory:
+*main.py*
+```python
+import cmdmenu
+import echoes, arithmetics
+
+cmdmenu.run(toplevel=echoes, modules=[arithmetics])
+```
+
+Now you can run the following:
+```
+$ python main.py echo foo
+foo
+$ python main.py hello
+Hello, World!
+$ python main.py hello John
+Hello, John!
+$ python main.py arithmetics add_numbers 1 2 3
+6
+```
+
+You can also view some nice help messages by running `python main.py --help`
+or `python main.py arithmetics --help` etc.
+
 See `/examples` for full exampes.
+See below for creating your argument parser manually, as well as configuration options,
+and automatically creating deeper hierarchies recursively.
+
 
 ### Adding commands
 
