@@ -16,6 +16,10 @@ def hello(name=None):
     else:
         print("Hello, {}!".format(name))
 
+@cmdmenu.cmdmenu_function
+def getkw(**kwargs):
+    pass
+
 @cmdmenu.cmdmenu_function("Print sum of given numbers")
 def add_numbers(numbers: {"help": "Numbers to sum up",
                   "nargs": "+", "type":int}):

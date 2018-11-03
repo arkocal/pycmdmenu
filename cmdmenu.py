@@ -6,6 +6,41 @@ import pkgutil
 from types import ModuleType
 
 FUNC_NAME_ARG = "_cmdmenu_func_name"
+FUNC_STACK_ARG = "_cmdmenu_func_stack"
+
+def _merge_funcs(f, g):
+    # TODO TEST EXPERIMENTAL
+    """Return a function that takes all the arguments
+    f and g take, run f first, and g afterwards."""
+    combined_par = dict(inspect.signature(f).parameters)
+    combined_par.update(dict(inspect.signature(g).parameters))
+
+    def param_rang(param):
+        if param.kind == param.VAR_POSITIONAL:
+            return 3
+        if param.kind == param.VAR_KEYWORD:
+            return 4
+        if param.default == inspect._empty:
+            return 1
+        return 2
+
+    def merged_func(*args, **kwargs):
+        for func in f, g:
+            sig = inspect.signature(func)
+            print("Calling;", func.__name__)
+            print("ARGS:", args)
+            print("KWARGS:", kwargs)
+            if inspect.Parameter.VAR_KEYWORD not in [arg.kind for arg in sig.parameters.values()]:
+                kwargs_func = {k:v for k,v in kwargs.items() if k in sig.parameters.keys()}
+                print(kwargs_func)
+            func(*args, **kwargs_func)
+
+    sig = inspect.signature(merged_func)
+    sorted_params = sorted(combined_par.values(), key=param_rang)
+    merged_func.__signature__ = sig.replace(parameters=sorted_params)
+    merged_func.__name__ = g.__name__
+    return merged_func
+
 
 def cmdmenu_function(param, description=None):
     """Decorator for marking a function to appear in cmdmenu.
@@ -32,6 +67,8 @@ def cmdmenu_function(param, description=None):
         return param
     raise ValueError("Invalid parameters")
 
+def cmdmenu_module_func(param):
+    param.cmdmenu_is_marked_as_module_func = True
 
 def add_command(subparsers, command_function):
     """Add a command function to argparse subparser.
@@ -70,6 +107,9 @@ def add_command(subparsers, command_function):
                                                command_function.__name__))
 
     for param_name, param in sig.parameters.items():
+        # do not add *args, **kwargs to menu
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            continue
         # Do not change the actual annotation
         meta = copy.deepcopy(param.annotation)
         if isinstance(meta, str):
@@ -102,7 +142,8 @@ def add_command(subparsers, command_function):
     subparser.set_defaults(**{FUNC_NAME_ARG:command_function})
 
 
-def add_module(subparsers, module, recursive=True, toplevel=None):
+def add_module(subparsers, module, parser=None, recursive=True, toplevel=None,
+               defaults=None):
     """Add a command function to argparse subparser.
 
     It will add functions marked with the cmdmenu_function decorator,
@@ -133,29 +174,46 @@ def add_module(subparsers, module, recursive=True, toplevel=None):
         toplevel = meta.pop("toplevel", False)
 
     if toplevel:
-        add_to = subparsers
+        add_to_subparsers = subparsers
+        add_to_parser = parser
     else:
         name = meta.pop("name", module.__name__.split(".")[-1])
-        add_to = subparsers.add_parser(name, **meta).add_subparsers()
+        add_to_parser = subparsers.add_parser(name, **meta)
+        add_to_subparsers = add_to_parser.add_subparsers()
+
+    if defaults is None:
+        defaults = {}
+
+    def mymodulefunc(x:"help"=5):
+        print(x)
 
     # Only add functions marked with the cmdmenu_function decorator
     commands = [(n, v) for n, v in inspect.getmembers(module)
                 if getattr(v, "cmdmenu_is_marked", False) is True]
     for name, func in commands:
-        add_command(add_to, func)
+        add_command(add_to_subparsers,  _merge_funcs(mymodulefunc, func))
 
     if recursive and hasattr(module, "__path__"):
         for _, name, ispkg in pkgutil.iter_modules(module.__path__):
             submodule = __import__(module.__name__+"."+name, fromlist=(name))
             if vars(submodule).get("IS_MENU_MODULE", False):
-                add_module(add_to, submodule, recursive=ispkg)
+                add_module(add_to_subparsers, submodule, parser=add_to_parser,
+                           recursive=ispkg)
 
 
 def parse_and_run_with(argument_parser):
     """Run function with arguments from populated argument_parser."""
     args = vars(argument_parser.parse_args())
     func = args.pop(FUNC_NAME_ARG, None)
+    if func is None:
+        print(args)
     assert func is not None, "No function for given args"
+
+    # If function does not take args or kwargs, just pass the fitting args.
+    sig = inspect.signature(func)
+    if inspect.Parameter.VAR_KEYWORD not in [arg.kind for arg in sig.parameters.values()]:
+        args = {k:v for k,v in args.items() if k in sig.parameters.keys()}
+        print(args)
     return func(**args)
 
 
@@ -176,13 +234,15 @@ def run(toplevel=None, module=None, *args, **kwargs):
     elif isinstance(toplevel, ModuleType):
         toplevel = [toplevel]
     for m in toplevel:
-        add_module(subparsers, m, recursive=True, toplevel=True)
+        add_module(subparsers, m, parser=argument_parser, recursive=True,
+                   toplevel=True)
 
     if module is None:
         module = []
     elif isinstance(module, ModuleType):
         module = [module]
     for m in module:
-        add_module(subparsers, m, recursive=True, toplevel=False)
+        add_module(subparsers, m, parser=argument_parser, recursive=True,
+                   toplevel=False)
 
     parse_and_run_with(argument_parser)
