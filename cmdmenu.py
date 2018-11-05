@@ -6,15 +6,17 @@ import pkgutil
 from types import ModuleType
 
 FUNC_NAME_ARG = "_cmdmenu_func_name"
-FUNC_STACK_ARG = "_cmdmenu_func_stack"
 
-def _merge_funcs(f, g):
-    # TODO TEST EXPERIMENTAL
-    """Return a function that takes all the arguments
-    f and g take, run f first, and g afterwards."""
-    combined_par = dict(inspect.signature(f).parameters)
-    combined_par.update(dict(inspect.signature(g).parameters))
 
+def _merge_funcs(funcs):
+    """Merge funcs into a single function.
+
+    The resulting function will take all the parameters the given
+    functions take, and execute the functions in given order.
+    """
+    # Function parameters should be given in a specific order
+    # when constructing functions. Lower rang stand for a parameter
+    # that comes first
     def param_rang(param):
         if param.kind == param.VAR_POSITIONAL:
             return 3
@@ -25,20 +27,20 @@ def _merge_funcs(f, g):
         return 2
 
     def merged_func(*args, **kwargs):
-        for func in f, g:
+        for func in funcs:
             sig = inspect.signature(func)
-            print("Calling;", func.__name__)
-            print("ARGS:", args)
-            print("KWARGS:", kwargs)
             if inspect.Parameter.VAR_KEYWORD not in [arg.kind for arg in sig.parameters.values()]:
                 kwargs_func = {k:v for k,v in kwargs.items() if k in sig.parameters.keys()}
-                print(kwargs_func)
             func(*args, **kwargs_func)
+
+    combined_par = {}
+    for func in funcs:
+        combined_par.update(inspect.signature(func).parameters)
 
     sig = inspect.signature(merged_func)
     sorted_params = sorted(combined_par.values(), key=param_rang)
     merged_func.__signature__ = sig.replace(parameters=sorted_params)
-    merged_func.__name__ = g.__name__
+    merged_func.__name__ = funcs[-1].__name__
     return merged_func
 
 
@@ -69,6 +71,7 @@ def cmdmenu_function(param, description=None):
 
 def cmdmenu_module_func(param):
     param.cmdmenu_is_marked_as_module_func = True
+    return param
 
 def add_command(subparsers, command_function):
     """Add a command function to argparse subparser.
@@ -142,8 +145,7 @@ def add_command(subparsers, command_function):
     subparser.set_defaults(**{FUNC_NAME_ARG:command_function})
 
 
-def add_module(subparsers, module, parser=None, recursive=True, toplevel=None,
-               defaults=None):
+def add_module(subparsers, module, parser=None, recursive=True, toplevel=None):
     """Add a command function to argparse subparser.
 
     It will add functions marked with the cmdmenu_function decorator,
@@ -181,17 +183,17 @@ def add_module(subparsers, module, parser=None, recursive=True, toplevel=None,
         add_to_parser = subparsers.add_parser(name, **meta)
         add_to_subparsers = add_to_parser.add_subparsers()
 
-    if defaults is None:
-        defaults = {}
+    module_functions = [v for n, v in inspect.getmembers(module)
+                if getattr(v, "cmdmenu_is_marked_as_module_func",
+                           False) is True]
 
-    def mymodulefunc(x:"help"=5):
-        print(x)
 
     # Only add functions marked with the cmdmenu_function decorator
     commands = [(n, v) for n, v in inspect.getmembers(module)
                 if getattr(v, "cmdmenu_is_marked", False) is True]
     for name, func in commands:
-        add_command(add_to_subparsers,  _merge_funcs(mymodulefunc, func))
+        add_command(add_to_subparsers, _merge_funcs(module_functions +
+                                                    [func]))
 
     if recursive and hasattr(module, "__path__"):
         for _, name, ispkg in pkgutil.iter_modules(module.__path__):
@@ -213,7 +215,6 @@ def parse_and_run_with(argument_parser):
     sig = inspect.signature(func)
     if inspect.Parameter.VAR_KEYWORD not in [arg.kind for arg in sig.parameters.values()]:
         args = {k:v for k,v in args.items() if k in sig.parameters.keys()}
-        print(args)
     return func(**args)
 
 

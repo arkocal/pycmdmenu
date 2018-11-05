@@ -1,6 +1,10 @@
 import argparse
 import cmdmenu
 
+@cmdmenu.cmdmenu_module_func
+def echo_configpath(configpath:"Path to config file"="config"):
+    print("Config file path:", configpath)
+
 @cmdmenu.cmdmenu_function("Echo to terminal", "Longer description of echo")
 def echo(message: "Message to echo"):
     print(message)
